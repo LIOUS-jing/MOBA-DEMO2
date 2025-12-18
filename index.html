@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MOBA AI Assistant Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              hextech: {
+                100: '#e0f7fa',
+                300: '#4dd0e1',
+                500: '#00bcd4',
+                700: '#0097a7',
+                900: '#006064',
+              },
+              gold: {
+                300: '#fdd835',
+                500: '#fbc02d',
+                700: '#f57f17',
+              },
+              game: {
+                bg: '#0f172a',
+                panel: 'rgba(15, 23, 42, 0.85)',
+                border: '#785a28',
+              }
+            },
+            fontFamily: {
+              game: ['Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+            },
+            animation: {
+              'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'voice-wave': 'wave 1.2s ease-in-out infinite',
+            },
+            keyframes: {
+              wave: {
+                '0%, 100%': { height: '10%' },
+                '50%': { height: '100%' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #000;
+        color: #fff;
+        overflow: hidden;
+        user-select: none;
+      }
+      /* Custom scrollbar for chat */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .game-panel {
+        background: linear-gradient(to bottom, rgba(16, 26, 43, 0.9), rgba(11, 18, 29, 0.95));
+        border: 1px solid #785a28;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "Copy of MOBA AI Assistant Demo2",
+  "description": "A simulated MOBA game interface demonstrating 5 different AI interaction models (Click, Text, Single-turn Voice, Multi-turn Voice, Full Duplex).",
+  "requestFramePermissions": []
+}
