@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import GameHUD from './components/GameHUD';
 import ControlPanel from './components/ControlPanel';
 import { ProductMode, GameState, ChatMessage, PipelineLog } from './types';
-import { INITIAL_CHAT_HISTORY, AI_NAME, AI_RESPONSES } from './constants';
+import { INITIAL_CHAT_HISTORY, AI_NAME, AI_RESPONSES, DUPLEX_SCENARIOS } from './constants';
 import { getAIResponse } from './services/aiService';
 
 const App: React.FC = () => {
@@ -22,6 +23,7 @@ const App: React.FC = () => {
 
   const timerIntervalRef = useRef<number | null>(null);
   const speechTimeoutRef = useRef<number | null>(null);
+  const duplexScenarioIdxRef = useRef(0);
 
   const addPipelineLog = (role: PipelineLog['role'], content: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -37,37 +39,31 @@ const App: React.FC = () => {
     }]);
   };
 
-  /**
-   * Pipeline Logic visualization (ASR -> VAD -> NLP -> LLM -> TTS)
-   * Deliberately slowed down for demonstration purposes.
-   */
   const runPipelineFlow = async (query: string): Promise<string> => {
-    addPipelineLog('ASR', `正在捕捉语音信号...`);
-    await new Promise(r => setTimeout(r, 1000));
-    addPipelineLog('ASR', `转义完成: "${query}"`);
+    addPipelineLog('ASR', `捕捉音频流中...`);
     await new Promise(r => setTimeout(r, 800));
-    
-    addPipelineLog('VAD', 'VAD状态: 沉默检测通过，流结束');
+    addPipelineLog('ASR', `识别结果 [QUERY]: "${query}"`);
     await new Promise(r => setTimeout(r, 600));
     
-    addPipelineLog('NLP', '意图识别: 正在匹配局势分析库...');
-    await new Promise(r => setTimeout(r, 1200));
+    addPipelineLog('VAD', 'VAD状态: 语音结束 (Speech Stop)');
+    await new Promise(r => setTimeout(r, 400));
     
-    addPipelineLog('LLM', '正在向 Gemini 云端请求实时策略分析...');
+    addPipelineLog('NLP', '语义提取: 关键词 [打野, 入侵, 策略]');
+    await new Promise(r => setTimeout(r, 800));
     
+    addPipelineLog('LLM', 'Gemini 云端决策中...');
     const startTime = Date.now();
     const result = await getAIResponse(query, gameState);
     const duration = Date.now() - startTime;
     
-    // Ensure LLM step stays long enough to be readable
-    if (duration < 1500) await new Promise(r => setTimeout(r, 1500 - duration));
+    if (duration < 1200) await new Promise(r => setTimeout(r, 1200 - duration));
     
-    addPipelineLog('LLM', `推理成功 (接口延时: ${duration}ms)`);
-    await new Promise(r => setTimeout(r, 800));
+    addPipelineLog('LLM', `结果下发 [AI_TEXT]: "${result}"`);
+    await new Promise(r => setTimeout(r, 600));
     
-    addPipelineLog('TTS', '海克斯流式语音引擎合成中...');
+    addPipelineLog('TTS', '流式 TTS 合成 [Voice: Hextech-Male]...');
     await new Promise(r => setTimeout(r, 1000));
-    addPipelineLog('TTS', '语音包就绪，已通过小队频道下发');
+    addPipelineLog('TTS', '音频播放开始');
     
     return result;
   };
@@ -75,29 +71,25 @@ const App: React.FC = () => {
   const handleAIInteraction = async (query: string, isAuto: boolean = false) => {
     const isVoiceMode = [ProductMode.SINGLE_TURN_VOICE, ProductMode.MULTI_TURN_VOICE, ProductMode.FULL_DUPLEX].includes(currentMode);
 
-    // Mode 2: Immediate text response (No visual delay/thinking status in HUD)
     if (currentMode === ProductMode.TEXT_CHAT) {
       const response = await getAIResponse(query, gameState);
       addChatMessage('ai', response);
       return;
     }
 
-    // Voice/Guided modes
     let finalResponse = "";
     if (isVoiceMode) {
       finalResponse = await runPipelineFlow(query);
     } else {
-      // Mode 1: Guided Query (Shows bubble on the right)
       setAiState(prev => ({ ...prev, isSpeaking: true, isThinking: true }));
       finalResponse = await getAIResponse(query, gameState);
     }
 
     setAiState(prev => ({ ...prev, isThinking: false, response: finalResponse, isSpeaking: true }));
 
-    // Reset voice playback state after a simulated duration
     const playDuration = 5000;
     speechTimeoutRef.current = window.setTimeout(() => {
-      if (isVoiceMode) addPipelineLog('TTS', '音频播放完成，进入待命状态');
+      if (isVoiceMode) addPipelineLog('TTS', '播放链路释放');
       setAiState(prev => ({ ...prev, isSpeaking: false, response: null }));
     }, playDuration);
   };
@@ -106,14 +98,53 @@ const App: React.FC = () => {
     if (currentMode === ProductMode.TEXT_CHAT) {
       addChatMessage('player', text);
       if (text.toLowerCase().includes('@ai')) {
-        handleAIInteraction(text.replace(/@ai/gi, '').trim() || "正在聆听，召唤师。");
+        handleAIInteraction(text.replace(/@ai/gi, '').trim() || "在的。");
       }
     } else {
       handleAIInteraction(text);
     }
   };
 
-  // Mode 4: 30S Window Logic
+  // 全双工模式：模拟真实多场景对话循环
+  useEffect(() => {
+    let scenarioTimer: number | null = null;
+
+    if (currentMode === ProductMode.FULL_DUPLEX && isDuplexActive) {
+      const runScenario = async () => {
+        const scenario = DUPLEX_SCENARIOS[duplexScenarioIdxRef.current % DUPLEX_SCENARIOS.length];
+        duplexScenarioIdxRef.current++;
+
+        addPipelineLog('SYSTEM', `[主动触发] 场景探测: ${scenario.trigger}`);
+        await new Promise(r => setTimeout(r, 1000));
+        
+        // AI 先主动说话
+        addPipelineLog('LLM', `生成主动话术: "${scenario.ai}"`);
+        setAiState(prev => ({ ...prev, isSpeaking: true, response: scenario.ai }));
+        await new Promise(r => setTimeout(r, 4000));
+        setAiState(prev => ({ ...prev, isSpeaking: false, response: null }));
+
+        // 模拟用户语音回应
+        await new Promise(r => setTimeout(r, 1500));
+        addPipelineLog('ASR', `实时转义用户回复: "${scenario.user}"`);
+        await new Promise(r => setTimeout(r, 1000));
+
+        // AI 再次快速响应
+        addPipelineLog('LLM', `全双工快速响应: "${scenario.reply}"`);
+        setAiState(prev => ({ ...prev, isSpeaking: true, response: scenario.reply }));
+        await new Promise(r => setTimeout(r, 4000));
+        setAiState(prev => ({ ...prev, isSpeaking: false, response: null }));
+
+        // 间隔后进行下一个场景
+        scenarioTimer = window.setTimeout(runScenario, 8000);
+      };
+
+      scenarioTimer = window.setTimeout(runScenario, 2000);
+    }
+
+    return () => { if (scenarioTimer) clearTimeout(scenarioTimer); };
+  }, [currentMode, isDuplexActive]);
+
+  // 形态4的 30s 窗口
   useEffect(() => {
     if (currentMode === ProductMode.MULTI_TURN_VOICE && aiState.isListening) {
       setAiState(prev => ({ ...prev, timer: 30 }));
@@ -121,7 +152,7 @@ const App: React.FC = () => {
         setAiState(prev => {
           if (prev.timer <= 1) {
             clearInterval(timerIntervalRef.current!);
-            addPipelineLog('SYSTEM', '30s 持续监听窗口已关闭');
+            addPipelineLog('SYSTEM', '30s 聆听窗已超时关闭');
             return { ...prev, isListening: false, timer: 0 };
           }
           return { ...prev, timer: prev.timer - 1 };
@@ -133,22 +164,26 @@ const App: React.FC = () => {
     return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
   }, [aiState.isListening, currentMode]);
 
-  const handleVoiceTrigger = (start: boolean) => {
-    if (currentMode === ProductMode.MULTI_TURN_VOICE) {
-      if (!aiState.isListening) {
+  const handleVoiceTrigger = (active: boolean) => {
+    // 形态3：按住说话 (Push-to-Talk)
+    if (currentMode === ProductMode.SINGLE_TURN_VOICE) {
+      if (active) {
         setAiState(prev => ({ ...prev, isListening: true }));
-        addPipelineLog('SYSTEM', '多轮对话模式已激活');
-      } else {
-        addPipelineLog('USER_ACTION', '捕捉到后续询问语音...');
-        handleAIInteraction("这局我该针对对面哪个英雄？");
-      }
-    } else if (currentMode === ProductMode.SINGLE_TURN_VOICE) {
-      if (start) {
-        setAiState(prev => ({ ...prev, isListening: true }));
-        addPipelineLog('SYSTEM', '录音中...');
+        addPipelineLog('SYSTEM', '用户按下录音 [Start Capture]');
       } else {
         setAiState(prev => ({ ...prev, isListening: false }));
-        handleAIInteraction("中路 Miss 了，我需要去支援吗？");
+        addPipelineLog('SYSTEM', '用户松开录音 [Trigger AI Inference]');
+        handleAIInteraction("这波小龙团我该怎么切入？");
+      }
+    } 
+    // 形态4：点击切换 30s 窗口
+    else if (currentMode === ProductMode.MULTI_TURN_VOICE) {
+      if (!aiState.isListening) {
+        setAiState(prev => ({ ...prev, isListening: true }));
+        addPipelineLog('SYSTEM', '开启 30s 全力监听模式');
+      } else {
+        addPipelineLog('USER_ACTION', '多轮窗口内捕捉到后续追问');
+        handleAIInteraction("对面辅助不见了，是不是去排眼了？");
       }
     }
   };
@@ -157,34 +192,25 @@ const App: React.FC = () => {
     const active = !isDuplexActive;
     setIsDuplexActive(active);
     if (active) {
-      addPipelineLog('SYSTEM', '全双工 (Full-Duplex) 陪伴模式上线');
-      addPipelineLog('ASR', '实时监听激活：采样率 16kHz...');
-      
-      // AI Proactive query simulation
-      setTimeout(async () => {
-        if (isDuplexActive) {
-          addPipelineLog('SYSTEM', '策略模块触发：检测到对方野区视野盲区');
-          addPipelineLog('LLM', '正在为您生成主动安全提醒...');
-          const proactiveMsg = await getAIResponse("根据当前局势给我一个关于生存的主动提醒", gameState);
-          handleAIInteraction(proactiveMsg, true);
-        }
-      }, 7000);
+      addPipelineLog('SYSTEM', '全双工实时陪伴链路已连接 [Latency < 150ms]');
+      addPipelineLog('ASR', '实时语音特征监听启动...');
     } else {
-      addPipelineLog('SYSTEM', '全双工陪伴已退出');
+      addPipelineLog('SYSTEM', '链路正常断开');
+      setAiState(prev => ({ ...prev, isSpeaking: false, response: null }));
     }
   };
 
   const simulateInterrupt = () => {
     if (isDuplexActive && aiState.isSpeaking) {
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-      addPipelineLog('USER_ACTION', '!!! 用户实时打断 (Barge-in) !!!');
-      addPipelineLog('SYSTEM', '中止当前音频流，优先响应新指令');
+      addPipelineLog('USER_ACTION', '!!! 用户实时抢占打断 (Barge-in Detected) !!!');
+      addPipelineLog('SYSTEM', '立即执行中断协议：停止当前音频播报');
       setAiState(prev => ({ ...prev, isSpeaking: false, response: null }));
       
       setTimeout(() => {
-        addPipelineLog('ASR', '识别打断内容: "停停停，先分析一下这波越塔能不能杀！"');
-        handleAIInteraction("这波越塔能杀吗？");
-      }, 1200);
+        addPipelineLog('ASR', '抢断话术识别: "别说了，先看大龙，对面开开了！"');
+        handleAIInteraction("对面在偷大龙吗？");
+      }, 1000);
     }
   };
 
@@ -207,8 +233,8 @@ const App: React.FC = () => {
           isDuplexActive={isDuplexActive}
         />
         {isDuplexActive && aiState.isSpeaking && (
-          <div className="absolute bottom-10 right-10 bg-red-600/80 px-6 py-2 rounded-full animate-pulse text-xs font-bold border border-white/20 shadow-lg">
-            右键屏幕 模拟打断 AI 说话 (Barge-in)
+          <div className="absolute bottom-10 right-10 bg-cyan-600/90 px-6 py-2 rounded-full animate-pulse text-xs font-bold border border-white/20 shadow-[0_0_20px_rgba(6,182,212,0.5)] z-50">
+            右键点击 模拟实时打断 AI 说话
           </div>
         )}
       </div>
@@ -217,7 +243,7 @@ const App: React.FC = () => {
         currentMode={currentMode}
         onModeChange={(m) => {
           setCurrentMode(m);
-          setPipelineLogs([{ id: 'init', role: 'SYSTEM', content: `形态已更新: ${ProductMode[m]}`, timestamp: '--:--:--' }]);
+          setPipelineLogs([{ id: 'init', role: 'SYSTEM', content: `交互形态切换: ${ProductMode[m]}`, timestamp: '--:--:--' }]);
           setAiState({ isListening: false, isSpeaking: false, response: null, timer: 0, isThinking: false });
           setIsDuplexActive(false);
           if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
